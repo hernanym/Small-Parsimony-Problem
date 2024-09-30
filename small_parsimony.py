@@ -20,60 +20,66 @@ def parse_input(data):
 
     return tree, dna_strings, n
 
-# Fitch's algorithm implementation for Small Parsimony
-def fitch(tree, dna_strings, n):
-    # DP table to store the character states for each node
-    internal_labels = {}
-    parsimony_score = 0
-    sequence_length = len(next(iter(dna_strings.values())))
-
-    # Initialize internal labels for all internal nodes
-    for node in range(n, max(tree) + 1):
-        internal_labels[node] = [''] * sequence_length
-
-    # Function to compute the most parsimonious label for a single site
-    def fitch_pass(node):
-        if node in dna_strings:
-            return list(dna_strings[node])
-
-        children = tree[node]
-        left_label = fitch_pass(children[0])
-        right_label = fitch_pass(children[1])
-        
-        result = []
-        for l, r in zip(left_label, right_label):
-            if l == r:
-                result.append(l)
+# Compute the parsimony score for a given tree
+def small_parsimony(tree, dna_strings, n):
+    # Set of symbols (nucleotides in this case)
+    alphabet = ['A', 'C', 'G', 'T']
+    num_symbols = len(alphabet)
+    
+    # Initialize the scoring dictionary for all nodes
+    s = defaultdict(lambda: [float('inf')] * num_symbols)  # Each node gets a list for scores for A, C, G, T
+    tags = defaultdict(int)  # Tag each node (0 for unprocessed, 1 for processed)
+    
+    # Initialize scores for the leaves
+    for leaf in dna_strings:
+        tags[leaf] = 1  # Mark leaf as processed
+        leaf_string = dna_strings[leaf]
+        for i, symbol in enumerate(alphabet):
+            if leaf_string == symbol:
+                s[leaf][i] = 0  # Score is 0 if the symbol matches the leaf character
             else:
-                result.append(min(l, r))  # Arbitrarily choose one of them
-        return result
+                s[leaf][i] = float('inf')  # Otherwise, it's infinity
 
-    # Post-order traversal to fill in internal node labels
-    for node in range(n, max(tree) + 1):
-        internal_labels[node] = fitch_pass(node)
-    
-    # Calculate total parsimony score by counting differences between nodes
-    def calc_parsimony(node):
-        nonlocal parsimony_score
-        if node not in tree:
-            return dna_strings[node]
+    # Function to calculate the mutation cost δ(i, k) (1 if i != k, 0 otherwise)
+    def delta(i, k):
+        return 1 if i != k else 0
+
+    # Find a ripe node (a node with unprocessed tag, whose children are processed)
+    def find_ripe_node():
+        for node in tree:
+            if tags[node] == 0:  # Node is unprocessed
+                left, right = tree[node]
+                if tags[left] == 1 and tags[right] == 1:
+                    return node
+        return None
+
+    # Process all internal nodes
+    while True:
+        v = find_ripe_node()
+        if v is None:
+            break  # No ripe nodes left, we're done
         
-        left, right = tree[node]
-        left_seq = calc_parsimony(left)
-        right_seq = calc_parsimony(right)
-        
-        node_seq = internal_labels[node]
-        
-        for i in range(sequence_length):
-            if left_seq[i] != node_seq[i]:
-                parsimony_score += 1
-            if right_seq[i] != node_seq[i]:
-                parsimony_score += 1
-        
-        return node_seq
-    
-    calc_parsimony(max(tree))  # Traverse starting from the root
-    return internal_labels, parsimony_score
+        tags[v] = 1  # Mark node as processed
+        left, right = tree[v]
+
+        # Calculate the score for each character k at node v
+        for k in range(num_symbols):
+            min_left = float('inf')
+            min_right = float('inf')
+
+            for i in range(num_symbols):
+                min_left = min(min_left, s[left][i] + delta(alphabet[i], alphabet[k]))
+            for j in range(num_symbols):
+                min_right = min(min_right, s[right][j] + delta(alphabet[j], alphabet[k]))
+            
+            # Update the score for character k at node v
+            s[v][k] = min_left + min_right
+
+    # Root is the last internal node processed
+    root = max(tree)
+    parsimony_score = min(s[root])  # Minimum score over all characters at the root
+
+    return s, parsimony_score
 
 # Format the output adjacency list with mutation costs
 def format_output(tree, internal_labels, dna_strings, parsimony_score, n):
@@ -98,7 +104,7 @@ def format_output(tree, internal_labels, dna_strings, parsimony_score, n):
 # Main function to integrate all steps
 def small_parsimony_problem(data):
     tree, dna_strings, n = parse_input(data)
-    internal_labels, parsimony_score = fitch(tree, dna_strings, n)
+    internal_labels, parsimony_score = small_parsimony(tree, dna_strings, n)
     result = format_output(tree, internal_labels, dna_strings, parsimony_score, n)
     return result
 
